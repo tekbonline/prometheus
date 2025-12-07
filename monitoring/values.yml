@@ -1,30 +1,121 @@
+
+# Global name overrides (optional)
 nameOverride: "kube-prometheus"
 fullnameOverride: "kube-prometheus"
 
+# Prometheus configuration
 prometheus:
+  enabled: true
+  service:
+    type: ClusterIP
   prometheusSpec:
-    retention: 7d
+    replicas: 2                 # HA (note: duplicates without Thanos)
+    retention: 7d               # adjust per storage capacity
+    walCompression: true
     storageSpec:
       volumeClaimTemplate:
         spec:
+          storageClassName: gp3 # ensure StorageClass exists in EKS
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 20Gi
+              storage: 50Gi      # was 20Gi; bumped for safer prod defaults
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 6Gi
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
 
+# Alertmanager config
 alertmanager:
+  enabled: true
+  service:
+    type: ClusterIP
   alertmanagerSpec:
+    replicas: 2
     storage:
       volumeClaimTemplate:
         spec:
+          storageClassName: gp3
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 5Gi
+              storage: 10Gi     # was 5Gi; modest production bump
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
 
+# Grafana
 grafana:
+  enabled: true
+
+  # In production, use a Secret (or SealedSecret) for credentials.
+  # For initial testing, you can keep these here, but move to existingSecret later.
   adminUser: admin
   adminPassword: admin1234
-  service:
-    type: LoadBalancer
 
+  persistence:
+    enabled: true
+    storageClassName: gp3
+    size: 20Gi
+
+  service:
+    # Prefer Ingress + ALB over public LoadBalancer for security.
+    # If you must use LoadBalancer, consider making it internal.
+    type: ClusterIP
+
+  # OPTIONAL: enable ingress via AWS Load Balancer Controller
+  ingress:
+    enabled: false
+    annotations:
+      kubernetes.io/ingress.class: alb
+      alb.ingress.kubernetes.io/scheme: internal    # or 'internet-facing'
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    hosts:
+      - grafana.monitoring.example.internal
+    tls: []
+
+  # Hardening: enable basic NetworkPolicy
+  networkPolicy:
+    enabled: true
+    ingress:
+      - from:
+          - podSelector: {}
+    egress:
+      - to:
+          - namespaceSelector: {}
+
+# Node exporter and kube-state-metrics
+prometheus-node-exporter:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 50Mi
+    limits:
+      cpu: 200m
+      memory: 200Mi
+
+kube-state-metrics:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 150Mi
+    limits:
+      cpu: 300m
+      memory: 300Mi
+
+# Default rules (alerts/recording) for Kubernetes
+defaultRules:
+  create: true
