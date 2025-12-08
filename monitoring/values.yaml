@@ -1,4 +1,3 @@
-
 # Global name overrides (optional)
 nameOverride: "kube-prometheus"
 fullnameOverride: "kube-prometheus"
@@ -9,17 +8,17 @@ prometheus:
   service:
     type: ClusterIP
   prometheusSpec:
-    replicas: 2                 # HA (note: duplicates without Thanos)
-    retention: 7d               # adjust per storage capacity
+    replicas: 2
+    retention: 7d
     walCompression: true
     storageSpec:
       volumeClaimTemplate:
         spec:
-          storageClassName: gp3 # ensure StorageClass exists in EKS
+          storageClassName: gp3
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 50Gi      # was 20Gi; bumped for safer prod defaults
+              storage: 50Gi
     resources:
       requests:
         cpu: 500m
@@ -45,7 +44,7 @@ alertmanager:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 10Gi     # was 5Gi; modest production bump
+              storage: 10Gi
     resources:
       requests:
         cpu: 200m
@@ -57,9 +56,6 @@ alertmanager:
 # Grafana
 grafana:
   enabled: true
-
-  # In production, use a Secret (or SealedSecret) for credentials.
-  # For initial testing, you can keep these here, but move to existingSecret later.
   adminUser: admin
   adminPassword: admin1234
 
@@ -69,31 +65,25 @@ grafana:
     size: 20Gi
 
   service:
-    # Prefer Ingress + ALB over public LoadBalancer for security.
-    # If you must use LoadBalancer, consider making it internal.
     type: ClusterIP
 
-  # OPTIONAL: enable ingress via AWS Load Balancer Controller
   ingress:
     enabled: false
     annotations:
       kubernetes.io/ingress.class: alb
-      alb.ingress.kubernetes.io/scheme: internal    # or 'internet-facing'
+      alb.ingress.kubernetes.io/scheme: internal
       alb.ingress.kubernetes.io/target-type: ip
       alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
     hosts:
       - grafana.monitoring.example.internal
     tls: []
 
-  # Hardening: enable basic NetworkPolicy
   networkPolicy:
     enabled: true
     ingress:
-      - from:
-          - podSelector: {}
+      enabled: true
     egress:
-      - to:
-          - namespaceSelector: {}
+      enabled: true
 
 # Node exporter and kube-state-metrics
 prometheus-node-exporter:
