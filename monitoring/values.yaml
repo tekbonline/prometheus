@@ -131,7 +131,7 @@ grafana:
       alb.ingress.kubernetes.io/group.name: monitoring-internal
       alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
       # Supply ACM cert for TLS
-      alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:111122223333:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+      #alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:111122223333:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
       alb.ingress.kubernetes.io/ssl-redirect: "443"
     hosts:
       - grafana.monitoring.internal.example.com
