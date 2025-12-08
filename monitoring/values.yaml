@@ -1,3 +1,4 @@
+
 # Global name overrides (optional)
 nameOverride: "kube-prometheus"
 fullnameOverride: "kube-prometheus"
@@ -78,12 +79,20 @@ grafana:
       - grafana.monitoring.example.internal
     tls: []
 
+  # ✅ Correct, map-based NetworkPolicy schema
   networkPolicy:
     enabled: true
     ingress:
       enabled: true
+      # (Optional keys vary by chart version—leave empty unless you need them)
+      # from: []
+      # ports: []
     egress:
       enabled: true
+      # If your chart version supports these, keep them as empty lists or set appropriately:
+      # blockDNSResolution: false
+      # to: []
+      # ports: []
 
 # Node exporter and kube-state-metrics
 prometheus-node-exporter:
