@@ -141,11 +141,8 @@ grafana:
 
   # Keep NetworkPolicy schema map-based (avoid render issues)
   networkPolicy:
-    enabled: true
-    ingress:
-      enabled: true
-    egress:
-      enabled: true
+    enabled: false
+
 
 # ------------------------------------------------------------------------------
 # Node Exporter & Kube State Metrics
