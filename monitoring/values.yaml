@@ -1,21 +1,27 @@
 
-# Global name overrides (optional)
+# ------------------------------------------------------------------------------
+# Global: keep release-scoped names stable (optional)
+# ------------------------------------------------------------------------------
 nameOverride: "kube-prometheus"
 fullnameOverride: "kube-prometheus"
 
-# Prometheus configuration
+# ------------------------------------------------------------------------------
+# Prometheus
+# ------------------------------------------------------------------------------
 prometheus:
   enabled: true
   service:
+    # ALB will route to the Service; keep ClusterIP
     type: ClusterIP
   prometheusSpec:
     replicas: 2
     retention: 7d
     walCompression: true
+    # persistence
     storageSpec:
       volumeClaimTemplate:
         spec:
-          storageClassName: gp3
+          storageClassName: gp3          # change if you use another SC
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
@@ -27,11 +33,34 @@ prometheus:
       limits:
         cpu: "2"
         memory: 6Gi
+    # keep Helm-driven selectors
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
     ruleSelectorNilUsesHelmValues: false
 
-# Alertmanager config
+  # Ingress via internal ALB
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: alb
+      alb.ingress.kubernetes.io/scheme: internal
+      alb.ingress.kubernetes.io/target-type: ip
+      # One listener example (HTTP only). Prefer TLS in production—see Alertmanager/Grafana TLS stanzas.
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+      # Optional: place all three ingresses in one ALB group
+      alb.ingress.kubernetes.io/group.name: monitoring-internal
+      # Optional: restrict ALB to specific subnets (when controller auto-discovery is not used)
+      # alb.ingress.kubernetes.io/subnets: subnet-aaaa,subnet-bbbb
+    hosts:
+      - prometheus.monitoring.internal.example.com
+    paths:
+      - /
+    pathType: Prefix
+    tls: []   # For HTTPS, supply an ACM cert ARN and use the HTTPS listener variant below
+
+# ------------------------------------------------------------------------------
+# Alertmanager
+# ------------------------------------------------------------------------------
 alertmanager:
   enabled: true
   service:
@@ -54,9 +83,33 @@ alertmanager:
         cpu: "1"
         memory: 2Gi
 
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: alb
+      alb.ingress.kubernetes.io/scheme: internal
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/group.name: monitoring-internal
+      # --- HTTPS listener (recommended) ---
+      # Set your ACM cert ARN & use 443:
+      # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:111122223333:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+      # Optionally force SSL redirect:
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+    hosts:
+      - alertmanager.monitoring.internal.example.com
+    paths:
+      - /
+    pathType: Prefix
+    tls: []   # TLS is terminated at ALB via ACM; leave empty here
+
+# ------------------------------------------------------------------------------
 # Grafana
+# ------------------------------------------------------------------------------
 grafana:
   enabled: true
+
+  # In production, move credentials to a Secret / SealedSecret
   adminUser: admin
   adminPassword: admin1234
 
@@ -68,33 +121,35 @@ grafana:
   service:
     type: ClusterIP
 
+  # Ingress via internal ALB (HTTPS recommended)
   ingress:
-    enabled: false
+    enabled: true
     annotations:
       kubernetes.io/ingress.class: alb
       alb.ingress.kubernetes.io/scheme: internal
       alb.ingress.kubernetes.io/target-type: ip
-      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+      alb.ingress.kubernetes.io/group.name: monitoring-internal
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+      # Supply ACM cert for TLS
+      alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:111122223333:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
     hosts:
-      - grafana.monitoring.example.internal
-    tls: []
+      - grafana.monitoring.internal.example.com
+    path: /
+    pathType: Prefix
+    tls: []   # TLS handled at ALB
 
-  # ✅ Correct, map-based NetworkPolicy schema
+  # Keep NetworkPolicy schema map-based (avoid render issues)
   networkPolicy:
     enabled: true
     ingress:
       enabled: true
-      # (Optional keys vary by chart version—leave empty unless you need them)
-      # from: []
-      # ports: []
     egress:
       enabled: true
-      # If your chart version supports these, keep them as empty lists or set appropriately:
-      # blockDNSResolution: false
-      # to: []
-      # ports: []
 
-# Node exporter and kube-state-metrics
+# ------------------------------------------------------------------------------
+# Node Exporter & Kube State Metrics
+# ------------------------------------------------------------------------------
 prometheus-node-exporter:
   enabled: true
   resources:
@@ -115,6 +170,8 @@ kube-state-metrics:
       cpu: 300m
       memory: 300Mi
 
-# Default rules (alerts/recording) for Kubernetes
+# ------------------------------------------------------------------------------
+# Default rules (alerts/recording)
+# ------------------------------------------------------------------------------
 defaultRules:
   create: true
