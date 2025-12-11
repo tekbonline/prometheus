@@ -1,31 +1,32 @@
 
 # ------------------------------------------------------------------------------
-# Global: keep release-scoped names stable (optional)
+# Global
 # ------------------------------------------------------------------------------
 nameOverride: "kube-prometheus"
 fullnameOverride: "kube-prometheus"
 
 # ------------------------------------------------------------------------------
-# Prometheus
+# Prometheus (served at /prometheus)
 # ------------------------------------------------------------------------------
 prometheus:
   enabled: true
   service:
-    # ALB will route to the Service; keep ClusterIP
     type: ClusterIP
+
   prometheusSpec:
     replicas: 2
     retention: 7d
     walCompression: true
-    # persistence
+
     storageSpec:
       volumeClaimTemplate:
         spec:
-          storageClassName: gp3          # change if you use another SC
+          storageClassName: gp3
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
               storage: 50Gi
+
     resources:
       requests:
         cpu: 500m
@@ -33,40 +34,45 @@ prometheus:
       limits:
         cpu: "2"
         memory: 6Gi
-    # keep Helm-driven selectors
+
+    # Discovery
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
     ruleSelectorNilUsesHelmValues: false
 
-  # Ingress via internal ALB
+    # Serve from subpath
+    routePrefix: /prometheus
+    externalUrl: /prometheus
+
   ingress:
     enabled: true
+    ingressClassName: alb
     annotations:
-      kubernetes.io/ingress.class: alb
-      alb.ingress.kubernetes.io/scheme: internal
+      alb.ingress.kubernetes.io/scheme: internet-facing
       alb.ingress.kubernetes.io/target-type: ip
-      # One listener example (HTTP only). Prefer TLS in production—see Alertmanager/Grafana TLS stanzas.
+      alb.ingress.kubernetes.io/group.name: monitoring-public
       alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
-      # Optional: place all three ingresses in one ALB group
-      alb.ingress.kubernetes.io/group.name: monitoring-internal
-      # Optional: restrict ALB to specific subnets (when controller auto-discovery is not used)
-      # alb.ingress.kubernetes.io/subnets: subnet-aaaa,subnet-bbbb
-    hosts:
-      - prometheus.monitoring.internal.example.com
+      alb.ingress.kubernetes.io/healthcheck-path: /prometheus/-/ready
+      alb.ingress.kubernetes.io/healthcheck-success-codes: "200"
+    hosts: []
     paths:
-      - /
+      - /prometheus
     pathType: Prefix
-    tls: []   # For HTTPS, supply an ACM cert ARN and use the HTTPS listener variant below
+    tls: []
 
 # ------------------------------------------------------------------------------
-# Alertmanager
+# Alertmanager (served at /alertmanager)
 # ------------------------------------------------------------------------------
 alertmanager:
   enabled: true
   service:
     type: ClusterIP
+
   alertmanagerSpec:
     replicas: 2
+    # Serve from subpath
+    routePrefix: /alertmanager
+
     storage:
       volumeClaimTemplate:
         spec:
@@ -75,6 +81,7 @@ alertmanager:
           resources:
             requests:
               storage: 10Gi
+
     resources:
       requests:
         cpu: 200m
@@ -85,31 +92,25 @@ alertmanager:
 
   ingress:
     enabled: true
+    ingressClassName: alb
     annotations:
-      kubernetes.io/ingress.class: alb
-      alb.ingress.kubernetes.io/scheme: internal
+      alb.ingress.kubernetes.io/scheme: internet-facing
       alb.ingress.kubernetes.io/target-type: ip
-      alb.ingress.kubernetes.io/group.name: monitoring-internal
-      # --- HTTPS listener (recommended) ---
-      # Set your ACM cert ARN & use 443:
-      # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:111122223333:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
-      # Optionally force SSL redirect:
-      alb.ingress.kubernetes.io/ssl-redirect: "443"
-    hosts:
-      - alertmanager.monitoring.internal.example.com
+      alb.ingress.kubernetes.io/group.name: monitoring-public
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+      alb.ingress.kubernetes.io/healthcheck-path: /-/ready
+      alb.ingress.kubernetes.io/healthcheck-success-codes: "200"
+    hosts: []
     paths:
-      - /
+      - /alertmanager
     pathType: Prefix
-    tls: []   # TLS is terminated at ALB via ACM; leave empty here
+    tls: []
 
 # ------------------------------------------------------------------------------
-# Grafana
+# Grafana (served at /grafana)
 # ------------------------------------------------------------------------------
 grafana:
   enabled: true
-
-  # In production, move credentials to a Secret / SealedSecret
   adminUser: admin
   adminPassword: admin1234
 
@@ -121,31 +122,33 @@ grafana:
   service:
     type: ClusterIP
 
-  # Ingress via internal ALB (HTTPS recommended)
+  # Serve Grafana from subpath "/grafana/"
+  grafana.ini:
+    server:
+      # IMPORTANT: trailing slash ensures correct asset paths
+      root_url: "%(protocol)s://%(domain)s/grafana/"
+      serve_from_sub_path: true
+
   ingress:
     enabled: true
+    ingressClassName: alb
     annotations:
-      kubernetes.io/ingress.class: alb
-      alb.ingress.kubernetes.io/scheme: internal
+      alb.ingress.kubernetes.io/scheme: internet-facing
       alb.ingress.kubernetes.io/target-type: ip
-      alb.ingress.kubernetes.io/group.name: monitoring-internal
-      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
-      # Supply ACM cert for TLS
-      #alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:111122223333:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-      alb.ingress.kubernetes.io/ssl-redirect: "443"
-    hosts:
-      - grafana.monitoring.internal.example.com
-    path: /
+      alb.ingress.kubernetes.io/group.name: monitoring-public
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+      alb.ingress.kubernetes.io/healthcheck-path: /grafana/api/health
+      alb.ingress.kubernetes.io/healthcheck-success-codes: "200"
+    hosts: []
+    path: /grafana
     pathType: Prefix
-    tls: []   # TLS handled at ALB
+    tls: []
 
-  # Keep NetworkPolicy schema map-based (avoid render issues)
   networkPolicy:
     enabled: false
 
-
 # ------------------------------------------------------------------------------
-# Node Exporter & Kube State Metrics
+# Exporters
 # ------------------------------------------------------------------------------
 prometheus-node-exporter:
   enabled: true
@@ -172,3 +175,5 @@ kube-state-metrics:
 # ------------------------------------------------------------------------------
 defaultRules:
   create: true
+  rules:
+    windows: false
